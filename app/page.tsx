@@ -18,20 +18,111 @@ type CatLog = {
   created_at: string
 }
 
+// フォームの値の型
+type FormValues = {
+  logged_at: string
+  weight_kg: string
+  food_amount: string
+  poop_condition: PoopStatus
+  memo: string
+}
+
 // フォームの初期値
-const initialForm = {
+const initialForm: FormValues = {
   logged_at: new Date().toISOString().slice(0, 10),
   weight_kg: '',
   food_amount: '',
-  poop_condition: '良好' as PoopStatus,
+  poop_condition: '良好',
   memo: '',
 }
 
+// 共通フォームフィールド
+function LogFormFields({
+  values,
+  onChange,
+}: {
+  values: FormValues
+  onChange: (v: FormValues) => void
+}) {
+  return (
+    <>
+      {/* 日付 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">日付</label>
+        <input
+          type="date"
+          required
+          value={values.logged_at}
+          onChange={(e) => onChange({ ...values, logged_at: e.target.value })}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+        />
+      </div>
+
+      {/* 体重 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">体重 (kg)</label>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="例: 4.20"
+          value={values.weight_kg}
+          onChange={(e) => onChange({ ...values, weight_kg: e.target.value })}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+        />
+      </div>
+
+      {/* ごはんの量 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">ごはんの量</label>
+        <input
+          type="text"
+          placeholder="例: ウェット1缶 + ドライ30g"
+          value={values.food_amount}
+          onChange={(e) => onChange({ ...values, food_amount: e.target.value })}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+        />
+      </div>
+
+      {/* うんちの状態 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">うんちの状態</label>
+        <select
+          value={values.poop_condition}
+          onChange={(e) => onChange({ ...values, poop_condition: e.target.value as PoopStatus })}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+        >
+          {POOP_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* メモ */}
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">メモ</label>
+        <textarea
+          rows={3}
+          placeholder="気になったことを記録..."
+          value={values.memo}
+          onChange={(e) => onChange({ ...values, memo: e.target.value })}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+        />
+      </div>
+    </>
+  )
+}
+
 export default function Home() {
-  const [form, setForm] = useState(initialForm)
+  const [form, setForm] = useState<FormValues>(initialForm)
   const [logs, setLogs] = useState<CatLog[]>([])
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+
+  // 編集モーダル用
+  const [editTarget, setEditTarget] = useState<CatLog | null>(null)
+  const [editForm, setEditForm] = useState<FormValues>(initialForm)
+  const [editLoading, setEditLoading] = useState(false)
 
   // 記録を新しい順で取得
   async function fetchLogs() {
@@ -87,6 +178,46 @@ export default function Home() {
     await fetchLogs()
   }
 
+  // 編集ボタン → モーダルを開く
+  function openEdit(log: CatLog) {
+    setEditTarget(log)
+    setEditForm({
+      logged_at: log.logged_at,
+      weight_kg: log.weight_kg != null ? String(log.weight_kg) : '',
+      food_amount: log.food_amount ?? '',
+      poop_condition: log.poop_condition,
+      memo: log.memo ?? '',
+    })
+  }
+
+  // 編集保存 → UPDATE
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editTarget) return
+    setEditLoading(true)
+
+    const { error } = await supabase
+      .from('cat_logs')
+      .update({
+        logged_at: editForm.logged_at,
+        weight_kg: editForm.weight_kg !== '' ? parseFloat(editForm.weight_kg) : null,
+        food_amount: editForm.food_amount,
+        poop_condition: editForm.poop_condition,
+        memo: editForm.memo,
+      })
+      .eq('id', editTarget.id)
+
+    setEditLoading(false)
+
+    if (error) {
+      alert('更新に失敗しました: ' + error.message)
+      return
+    }
+
+    setEditTarget(null)
+    await fetchLogs()
+  }
+
   return (
     <div className="min-h-screen bg-amber-50">
       <div className="mx-auto max-w-2xl px-4 py-10">
@@ -102,85 +233,7 @@ export default function Home() {
           className="mb-10 rounded-2xl bg-white p-6 shadow-md space-y-4"
         >
           <h2 className="text-lg font-semibold text-amber-700">記録を追加</h2>
-
-          {/* 日付 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              日付
-            </label>
-            <input
-              type="date"
-              required
-              value={form.logged_at}
-              onChange={(e) => setForm({ ...form, logged_at: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-          </div>
-
-          {/* 体重 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              体重 (kg)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="例: 4.20"
-              value={form.weight_kg}
-              onChange={(e) => setForm({ ...form, weight_kg: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-          </div>
-
-          {/* ごはんの量 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              ごはんの量
-            </label>
-            <input
-              type="text"
-              placeholder="例: ウェット1缶 + ドライ30g"
-              value={form.food_amount}
-              onChange={(e) => setForm({ ...form, food_amount: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-          </div>
-
-          {/* うんちの状態 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              うんちの状態
-            </label>
-            <select
-              value={form.poop_condition}
-              onChange={(e) =>
-                setForm({ ...form, poop_condition: e.target.value as PoopStatus })
-              }
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-            >
-              {POOP_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* メモ */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              メモ
-            </label>
-            <textarea
-              rows={3}
-              placeholder="気になったことを記録..."
-              value={form.memo}
-              onChange={(e) => setForm({ ...form, memo: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
-            />
-          </div>
-
+          <LogFormFields values={form} onChange={setForm} />
           <button
             type="submit"
             disabled={loading}
@@ -222,16 +275,63 @@ export default function Home() {
                   <p className="text-gray-500">{log.memo}</p>
                 )}
               </div>
-              <button
-                onClick={() => handleDelete(log.id)}
-                className="shrink-0 rounded-lg border border-red-200 px-3 py-1 text-xs text-red-400 hover:bg-red-50 transition-colors"
-              >
-                削除
-              </button>
+              <div className="flex flex-col gap-2 shrink-0">
+                <button
+                  onClick={() => openEdit(log)}
+                  className="rounded-lg border border-amber-200 px-3 py-1 text-xs text-amber-600 hover:bg-amber-50 transition-colors"
+                >
+                  編集
+                </button>
+                <button
+                  onClick={() => handleDelete(log.id)}
+                  className="rounded-lg border border-red-200 px-3 py-1 text-xs text-red-400 hover:bg-red-50 transition-colors"
+                >
+                  削除
+                </button>
+              </div>
             </li>
           ))}
         </ul>
       </div>
+
+      {/* 編集モーダル */}
+      {editTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditTarget(null) }}
+        >
+          <div className="w-full max-w-md mx-4 rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-amber-700">記録を編集</h2>
+              <button
+                onClick={() => setEditTarget(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <LogFormFields values={editForm} onChange={setEditForm} />
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditTarget(null)}
+                  className="flex-1 rounded-lg border border-gray-300 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="flex-1 rounded-lg bg-amber-500 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                >
+                  {editLoading ? '保存中...' : '保存する'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
